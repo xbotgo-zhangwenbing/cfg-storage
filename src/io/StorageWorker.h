@@ -116,7 +116,7 @@ private:
 	std::unordered_map<std::string, StorageMode> moduleModes_;
 	std::thread thread_;
 	mutable std::mutex mutex_;
-	std::condition_variable condition_;
+	std::condition_variable cv_;
 	std::deque<Command> commands_;
 	PendingTasks pendingTasks_;
 	std::string activeConfigId_;

@@ -232,7 +232,7 @@ bool StorageWorker::submitModule(const std::string &configId, const std::string 
 	pendingTasks_.insert_or_assign(configId + "/" + moduleKey,
 				       SaveTask{configId, moduleKey, revision, moduleModes_.at(moduleKey),
 						std::move(snapshot)});
-	condition_.notify_one();
+	cv_.notify_one();
 	return true;
 }
 
@@ -267,7 +267,7 @@ StorageWorker::Result StorageWorker::submit(Command command)
 		command.precedingTasks.swap(pendingTasks_);
 		commands_.push_back(std::move(command));
 	}
-	condition_.notify_one();
+	cv_.notify_one();
 	return completed.get();
 }
 
@@ -755,6 +755,19 @@ void StorageWorker::run()
 	}
 	std::unique_lock lock(mutex_);
 	for (;;) {
+		// 没有命令、快照或到期保存时休眠；收到通知后重新检查条件，避免遗漏并发提交。
+		auto ready = [this] {
+			return workerState_ == WorkerState::Stopping || !commands_.empty() || !pendingTasks_.empty() ||
+				(ioState_->saveScheduled && std::chrono::steady_clock::now() >= ioState_->deadline);
+		};
+		if (!ready()) {
+			if (ioState_->saveScheduled) {
+				cv_.wait_until(lock, ioState_->deadline, ready);
+			} else {
+				cv_.wait(lock, ready);
+			}
+		}
+
 		if (!commands_.empty()) {
 			auto command = std::move(commands_.front());
 			commands_.pop_front();
@@ -796,15 +809,6 @@ void StorageWorker::run()
 			lock.lock();
 			continue;
 		}
-		auto ready = [this] {
-			return workerState_ == WorkerState::Stopping || !commands_.empty() || !pendingTasks_.empty();
-		};
-		// 无任务时通过条件变量睡眠；新快照会唤醒线程，但不推迟首次保存截止时间。
-		if (ioState_->saveScheduled) {
-			condition_.wait_until(lock, ioState_->deadline, ready);
-		} else {
-			condition_.wait(lock, ready);
-		}
 	}
 }
 
@@ -819,7 +823,7 @@ bool StorageWorker::stop(std::string &error)
 		// 只发出停止请求；真正退出由 IO 线程完成，stop() 随后通过 join 等待收尾结束。
 		workerState_ = WorkerState::Stopping;
 	}
-	condition_.notify_one();
+	cv_.notify_one();
 	thread_.join();
 	std::lock_guard lock(mutex_);
 	workerState_ = WorkerState::Stopped;
