@@ -12,14 +12,14 @@ XBotGoConfigService *XBotGoConfigService::instance()
 XBotGoConfigService::XBotGoConfigService() : impl_(std::make_unique<Impl>()) {}
 XBotGoConfigService::~XBotGoConfigService() = default;
 
-bool XBotGoConfigService::initialize(const std::filesystem::path &rootDirectory)
+CfgError XBotGoConfigService::initialize(const std::filesystem::path &rootDirectory)
 {
 	return impl_->initialize(rootDirectory);
 }
 
-void XBotGoConfigService::shutdown()
+CfgError XBotGoConfigService::shutdown()
 {
-	impl_->shutdown();
+	return impl_->shutdown();
 }
 
 std::filesystem::path XBotGoConfigService::configurationRootDirectory() const
@@ -42,27 +42,27 @@ std::string XBotGoConfigService::currentConfigurationId() const
 	return impl_->currentConfigurationId();
 }
 
-bool XBotGoConfigService::createConfiguration(const std::string &name)
+CfgError XBotGoConfigService::createConfiguration(const std::string &name)
 {
 	return impl_->createConfiguration(name);
 }
 
-bool XBotGoConfigService::renameConfiguration(const std::string &configId, const std::string &name)
+CfgError XBotGoConfigService::renameConfiguration(const std::string &configId, const std::string &name)
 {
 	return impl_->renameConfiguration(configId, name);
 }
 
-bool XBotGoConfigService::deleteConfiguration(const std::string &configId)
+CfgError XBotGoConfigService::deleteConfiguration(const std::string &configId)
 {
 	return impl_->deleteConfiguration(configId);
 }
 
-bool XBotGoConfigService::switchConfiguration(const std::string &configId)
+CfgError XBotGoConfigService::switchConfiguration(const std::string &configId)
 {
 	return impl_->switchConfiguration(configId);
 }
 
-bool XBotGoConfigService::reloadCurrentConfiguration()
+CfgError XBotGoConfigService::reloadCurrentConfiguration()
 {
 	return impl_->reloadCurrentConfiguration();
 }
@@ -77,8 +77,4 @@ std::uint64_t XBotGoConfigService::getSavedRevision() const
 	return impl_->getSavedRevision();
 }
 
-std::string XBotGoConfigService::lastError() const
-{
-	return impl_->lastError();
-}
 } // namespace xbotgo

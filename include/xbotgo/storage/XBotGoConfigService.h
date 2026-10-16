@@ -1,5 +1,7 @@
 #pragma once
 
+#include "CfgError.h"
+
 #include <filesystem>
 #include <cstdint>
 #include <memory>
@@ -24,8 +26,8 @@ public:
 	// 单例由程序持有，返回指针始终非空，调用方无需判空，也不能自行释放。
 	static XBotGoConfigService *instance();
 
-	bool initialize(const std::filesystem::path &rootDirectory);
-	void shutdown();
+	CfgError initialize(const std::filesystem::path &rootDirectory);
+	CfgError shutdown();
 	std::filesystem::path configurationRootDirectory() const;
 
 	// Service 持有模块，返回地址在 Service 生命周期内保持稳定；调用方不释放。
@@ -36,14 +38,14 @@ public:
 	// 当前的配置列表id
 	std::string currentConfigurationId() const;
 	// 创建一个配置
-	bool createConfiguration(const std::string &name);
+	CfgError createConfiguration(const std::string &name);
 	// 重名命名一个配置
-	bool renameConfiguration(const std::string &configId, const std::string &name);
-	bool deleteConfiguration(const std::string &configId);
+	CfgError renameConfiguration(const std::string &configId, const std::string &name);
+	CfgError deleteConfiguration(const std::string &configId);
 	// 切换一个配置
-	bool switchConfiguration(const std::string &configId);
+	CfgError switchConfiguration(const std::string &configId);
 	// 先保存待写修改，再读取当前配置；失败时保留业务内存。
-	bool reloadCurrentConfiguration();
+	CfgError reloadCurrentConfiguration();
 
 	// 临时调试接口：仅供 Demo 显示和测试验证，业务代码不要依赖。
 	// TODO：存储流程测试完成后，从 Service 公共接口移除这两个方法，版本号保留在 Worker 内部。
@@ -51,7 +53,6 @@ public:
 	std::uint64_t getMemoryRevision() const;
 	// 已确认落盘成功的版本；保存失败时不会推进。
 	std::uint64_t getSavedRevision() const;
-	std::string lastError() const;
 
 private:
 	// 单例构造函数保持私有，禁止外部创建额外实例。

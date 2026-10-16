@@ -33,6 +33,18 @@ void require(bool condition, const char *message)
 		throw std::runtime_error(message);
 	}
 }
+void require(const CfgError &error, const char *message)
+{
+	if (error) {
+		throw std::runtime_error(message);
+	}
+}
+void requireError(const CfgError &error, const char *message)
+{
+	if (!error) {
+		throw std::runtime_error(message);
+	}
+}
 std::filesystem::path file(const std::filesystem::path &root, const std::string &id)
 {
 	return root / "configurations" / "v4" / id / "config.json";
@@ -85,7 +97,7 @@ void testService()
 	require(image->getAll().specification == ImageSpecification::P4K_30, "switch did not restore data");
 	require(service->deleteConfiguration(second), "delete failed");
 	require(!std::filesystem::exists(file(dir.path, second)), "delete did not remove directory");
-	require(!service->deleteConfiguration(first), "current delete accepted");
+	requireError(service->deleteConfiguration(first), "current delete accepted");
 	service->shutdown();
 	require(service->initialize(dir.path), "restart failed");
 	require(service->currentConfigurationId() == first, "index current id not restored");

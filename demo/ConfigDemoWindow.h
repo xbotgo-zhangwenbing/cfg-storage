@@ -10,6 +10,7 @@ class QCheckBox;
 class QPlainTextEdit;
 
 namespace xbotgo {
+struct CfgError;
 struct ImageParametersData;
 }
 
@@ -26,7 +27,7 @@ private:
 	void deleteConfiguration();
 	void switchConfiguration();
 	void reloadConfiguration();
-	void showError();
+	void showError(const xbotgo::CfgError &error);
 	void openConfigurationDirectory();
 	QWidget *buildImagePanel();
 	void refreshImageEditor();

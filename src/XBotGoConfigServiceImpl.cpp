@@ -19,15 +19,17 @@ XBotGoConfigService::Impl::~Impl()
 	shutdown();
 }
 
-bool XBotGoConfigService::Impl::initialize(const std::filesystem::path &rootDirectory)
+CfgError XBotGoConfigService::Impl::initialize(const std::filesystem::path &rootDirectory)
 {
 	std::lock_guard lock(mutex);
+	errorCode = CfgErrorCode::None;
 	if (initialized) {
 		return true;
 	}
 	// 启动io 线程。
 	if (!worker.start(rootDirectory, error)) {
-		return false;
+		errorCode = CfgErrorCode::NotRunning;
+		return {errorCode, error};
 	}
 	this->rootDirectory = std::filesystem::absolute(rootDirectory);
 	ObsData indexJson;
@@ -61,29 +63,37 @@ bool XBotGoConfigService::Impl::initialize(const std::filesystem::path &rootDire
 		}
 	}
 	if (!ready) {
+		errorCode = CfgErrorCode::LoadFailed;
 		if (error.empty()) {
 			error = "没有可用配置，且无法创建默认配置";
 		}
 		std::string stopError;
 		worker.stop(stopError);
-		return false;
+		return {errorCode, error};
 	}
 	error.clear();
+	errorCode = CfgErrorCode::None;
 	imageParameters.setAcceptingWrites(true);
 	initialized = true;
 	return true;
 }
 
-void XBotGoConfigService::Impl::shutdown()
+CfgError XBotGoConfigService::Impl::shutdown()
 {
 	std::lock_guard lock(mutex);
 	if (!initialized) {
-		return;
+		return {};
 	}
 	// 先等待已进入模块的 setter 完成并关闭写入口，再停止 IO 线程。
 	imageParameters.setAcceptingWrites(false);
 	worker.stop(error);
 	initialized = false;
+	if (!error.empty()) {
+		errorCode = CfgErrorCode::SaveFailed;
+		return {errorCode, error};
+	}
+	errorCode = CfgErrorCode::None;
+	return {};
 }
 
 std::filesystem::path XBotGoConfigService::Impl::configurationRootDirectory() const
@@ -113,108 +123,128 @@ std::string XBotGoConfigService::Impl::currentConfigurationId() const
 	return index.currentConfigId;
 }
 
-bool XBotGoConfigService::Impl::createConfiguration(const std::string &name)
+CfgError XBotGoConfigService::Impl::createConfiguration(const std::string &name)
 {
 	std::lock_guard lock(mutex);
 	error.clear();
+	errorCode = CfgErrorCode::None;
 	if (!initialized) {
+		errorCode = CfgErrorCode::NotInitialized;
 		error = "配置服务尚未初始化";
-		return false;
+		return {errorCode, error};
 	}
 	if (index.configurations.size() >= kMaximumConfigurationCount) {
+		errorCode = CfgErrorCode::ConfigurationLimit;
 		error = "最多保存 50 个配置";
-		return false;
+		return {errorCode, error};
 	}
 	std::string normalized;
 	if (!IndexCodec::normalizeName(name, normalized, error)) {
-		return false;
+		errorCode = CfgErrorCode::InvalidInput;
+		return {errorCode, error};
 	}
 	const auto duplicate = std::any_of(index.configurations.begin(), index.configurations.end(),
 					   [&](const auto &item) { return item.name == normalized; });
 	if (duplicate) {
+		errorCode = CfgErrorCode::ConfigurationExists;
 		error = "配置名称已存在";
-		return false;
+		return {errorCode, error};
 	}
 	const auto id = QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
 	return createAndActivate(id, normalized, index);
 }
 
-bool XBotGoConfigService::Impl::renameConfiguration(const std::string &configId, const std::string &name)
+CfgError XBotGoConfigService::Impl::renameConfiguration(const std::string &configId, const std::string &name)
 {
 	std::lock_guard lock(mutex);
 	error.clear();
+	errorCode = CfgErrorCode::None;
 	if (!initialized) {
+		errorCode = CfgErrorCode::NotInitialized;
 		error = "配置服务尚未初始化";
-		return false;
+		return {errorCode, error};
 	}
 	std::string normalized;
 	if (!IndexCodec::normalizeName(name, normalized, error)) {
-		return false;
+		errorCode = CfgErrorCode::InvalidInput;
+		return {errorCode, error};
 	}
 	auto nextIndex = index;
 	auto item = std::find_if(nextIndex.configurations.begin(), nextIndex.configurations.end(),
 				 [&](const auto &entry) { return entry.id == configId; });
 	if (item == nextIndex.configurations.end()) {
+		errorCode = CfgErrorCode::ConfigurationNotFound;
 		error = "配置不存在";
-		return false;
+		return {errorCode, error};
 	}
 	const auto duplicate =
 		std::any_of(index.configurations.begin(), index.configurations.end(),
 			    [&](const auto &entry) { return entry.id != configId && entry.name == normalized; });
 	if (duplicate) {
+		errorCode = CfgErrorCode::ConfigurationExists;
 		error = "配置名称已存在";
-		return false;
+		return {errorCode, error};
 	}
 	item->name = normalized;
 	if (!worker.renameConfiguration(configId, IndexCodec::encode(nextIndex), error)) {
-		return false;
+		errorCode = CfgErrorCode::SaveFailed;
+		return {errorCode, error};
 	}
 	index = std::move(nextIndex);
 	return true;
 }
 
-bool XBotGoConfigService::Impl::deleteConfiguration(const std::string &configId)
+CfgError XBotGoConfigService::Impl::deleteConfiguration(const std::string &configId)
 {
 	std::lock_guard lock(mutex);
 	error.clear();
+	errorCode = CfgErrorCode::None;
 	if (!initialized) {
+		errorCode = CfgErrorCode::NotInitialized;
 		error = "配置服务尚未初始化";
-		return false;
+		return {errorCode, error};
 	}
 	if (configId == index.currentConfigId) {
+		errorCode = CfgErrorCode::ConfigurationInUse;
 		error = "当前配置不能删除";
-		return false;
+		return {errorCode, error};
 	}
 	if (index.configurations.size() <= 1) {
+		errorCode = CfgErrorCode::ConfigurationLimit;
 		error = "至少需要保留一个配置";
-		return false;
+		return {errorCode, error};
 	}
 	auto nextIndex = index;
 	const auto item = std::find_if(nextIndex.configurations.begin(), nextIndex.configurations.end(),
 				       [&](const auto &entry) { return entry.id == configId; });
 	if (item == nextIndex.configurations.end()) {
+		errorCode = CfgErrorCode::ConfigurationNotFound;
 		error = "配置不存在";
-		return false;
+		return {errorCode, error};
 	}
 	nextIndex.configurations.erase(item);
 	if (!worker.deleteConfiguration(configId, IndexCodec::encode(nextIndex), error)) {
-		return false;
+		errorCode = CfgErrorCode::DeleteFailed;
+		return {errorCode, error};
 	}
 	index = std::move(nextIndex);
 	return true;
 }
 
-bool XBotGoConfigService::Impl::switchConfiguration(const std::string &configId)
+CfgError XBotGoConfigService::Impl::switchConfiguration(const std::string &configId)
 {
 	std::lock_guard lock(mutex);
 	error.clear();
+	errorCode = CfgErrorCode::None;
 	if (!initialized) {
+		errorCode = CfgErrorCode::NotInitialized;
 		error = "配置服务尚未初始化";
 		return false;
 	}
 	const auto item = std::find_if(index.configurations.begin(), index.configurations.end(),
 				       [&](const auto &entry) { return entry.id == configId; });
 	if (item == index.configurations.end()) {
+		errorCode = CfgErrorCode::ConfigurationNotFound;
 		error = "配置不存在";
 		return false;
 	}
@@ -224,11 +254,13 @@ bool XBotGoConfigService::Impl::switchConfiguration(const std::string &configId)
 	return loadAndActivate(configId, index);
 }
 
-bool XBotGoConfigService::Impl::reloadCurrentConfiguration()
+CfgError XBotGoConfigService::Impl::reloadCurrentConfiguration()
 {
 	std::lock_guard lock(mutex);
 	error.clear();
+	errorCode = CfgErrorCode::None;
 	if (!initialized) {
+		errorCode = CfgErrorCode::NotInitialized;
 		error = "配置服务尚未初始化";
 		return false;
 	}
@@ -245,12 +277,6 @@ std::uint64_t XBotGoConfigService::Impl::getSavedRevision() const
 	return worker.savedRevision();
 }
 
-std::string XBotGoConfigService::Impl::lastError() const
-{
-	std::lock_guard lock(mutex);
-	const auto workerError = worker.lastError();
-	return workerError.empty() ? error : workerError;
-}
 
 std::unordered_map<std::string, ObsData> XBotGoConfigService::Impl::defaultModules() const
 {
@@ -263,6 +289,7 @@ bool XBotGoConfigService::Impl::loadAndActivate(const std::string &configId, Ind
 {
 	LoadedConfiguration loaded;
 	if (!worker.loadConfiguration(configId, loaded, error)) {
+		errorCode = CfgErrorCode::LoadFailed;
 		return false;
 	}
 	ObsData image;
@@ -274,6 +301,7 @@ bool XBotGoConfigService::Impl::loadAndActivate(const std::string &configId, Ind
 	}
 	ImageParametersData decoded;
 	if (!ImageParametersCodec::decode(image.get(), decoded, error)) {
+		errorCode = CfgErrorCode::InvalidInput;
 		std::string discardError;
 		worker.discardCandidate(loaded.candidateToken, discardError);
 		return false;
@@ -281,6 +309,7 @@ bool XBotGoConfigService::Impl::loadAndActivate(const std::string &configId, Ind
 	std::string moduleConfigId = configId;
 	nextIndex.currentConfigId = configId;
 	if (!worker.activateConfiguration(configId, loaded.candidateToken, IndexCodec::encode(nextIndex), error)) {
+		errorCode = CfgErrorCode::SaveFailed;
 		return false;
 	}
 	// 所有可失败步骤在前；这里只交换已准备好的内存，不触发 setter 和自动保存。
@@ -295,6 +324,7 @@ bool XBotGoConfigService::Impl::createAndActivate(const std::string &id, const s
 	nextIndex.configurations.push_back(
 		{id, name, QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toStdString()});
 	if (!worker.createConfiguration(id, defaultModules(), error)) {
+		errorCode = CfgErrorCode::SaveFailed;
 		return false;
 	}
 	if (loadAndActivate(id, std::move(nextIndex))) {

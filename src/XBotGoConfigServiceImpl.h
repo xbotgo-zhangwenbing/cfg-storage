@@ -18,21 +18,20 @@ public:
 	Impl &operator=(const Impl &) = delete;
 
 public:
-	bool initialize(const std::filesystem::path &rootDirectory);
-	void shutdown();
+	CfgError initialize(const std::filesystem::path &rootDirectory);
+	CfgError shutdown();
 	std::filesystem::path configurationRootDirectory() const;
 	IImageParametersConfig *imageParametersConfig();
 	std::vector<ConfigurationSummary> configurations() const;
 	std::string currentConfigurationId() const;
-	bool createConfiguration(const std::string &name);
-	bool renameConfiguration(const std::string &configId, const std::string &name);
-	bool deleteConfiguration(const std::string &configId);
-	bool switchConfiguration(const std::string &configId);
-	bool reloadCurrentConfiguration();
+	CfgError createConfiguration(const std::string &name);
+	CfgError renameConfiguration(const std::string &configId, const std::string &name);
+	CfgError deleteConfiguration(const std::string &configId);
+	CfgError switchConfiguration(const std::string &configId);
+	CfgError reloadCurrentConfiguration();
 	// 临时转发 Worker 版本号供 Demo 和测试使用；测试完成后随公共接口一起移除。
 	std::uint64_t getMemoryRevision() const;
 	std::uint64_t getSavedRevision() const;
-	std::string lastError() const;
 
 private:
 	std::unordered_map<std::string, ObsData> defaultModules() const;
@@ -47,6 +46,7 @@ private:
 	IndexState index;
 	std::filesystem::path rootDirectory;
 	std::string error;
+	CfgErrorCode errorCode = CfgErrorCode::None;
 	bool initialized = false;
 };
 } // namespace xbotgo

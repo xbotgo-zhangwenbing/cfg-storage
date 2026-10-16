@@ -771,6 +771,7 @@ void StorageWorker::run()
 		if (!commands_.empty()) {
 			auto command = std::move(commands_.front());
 			commands_.pop_front();
+			// 进行耗时任务，其他线程可以提交任务到队列
 			lock.unlock();
 			for (auto &[taskKey, task] : command.precedingTasks) {
 				updateCache(std::move(task));

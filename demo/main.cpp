@@ -24,18 +24,19 @@ int main(int argc, char **argv)
 	app.setPalette(palette);
 	const auto root = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation).toStdString();
 	auto *service = xbotgo::XBotGoConfigService::instance();
-	if (!service->initialize(root)) {
+	const auto initializeError = service->initialize(root);
+	if (initializeError) {
 		QMessageBox::critical(nullptr, QStringLiteral("初始化失败"),
-				      QString::fromStdString(service->lastError()));
+					      QString::fromStdString(initializeError.description));
 		return 1;
 	}
 	ConfigDemoWindow window;
 	window.show();
 	const int result = app.exec();
-	service->shutdown();
-	if (!service->lastError().empty()) {
+	const auto shutdownError = service->shutdown();
+	if (shutdownError) {
 		QMessageBox::critical(nullptr, QStringLiteral("配置保存失败"),
-				      QString::fromStdString(service->lastError()));
+					      QString::fromStdString(shutdownError.description));
 		return 1;
 	}
 	return result;

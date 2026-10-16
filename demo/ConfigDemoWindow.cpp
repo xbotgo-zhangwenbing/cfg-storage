@@ -172,8 +172,10 @@ void ConfigDemoWindow::deleteConfiguration()
 				  QStringLiteral("确定删除配置“%1”？").arg(item->text())) != QMessageBox::Yes) {
 		return;
 	}
-	if (!XBotGoConfigService::instance()->deleteConfiguration(item->data(Qt::UserRole).toString().toStdString())) {
-		auto *toast = new QLabel(QString::fromStdString(XBotGoConfigService::instance()->lastError()), this);
+	const auto error = XBotGoConfigService::instance()->deleteConfiguration(
+		item->data(Qt::UserRole).toString().toStdString());
+	if (error) {
+		auto *toast = new QLabel(QString::fromStdString(error.description), this);
 		toast->setStyleSheet(QStringLiteral("background: #FFF1F0; color: #B42318; border: 1px solid #FDA29B; "
 						    "border-radius: 5px; padding: 9px 14px;"));
 		toast->adjustSize();
@@ -224,8 +226,9 @@ void ConfigDemoWindow::createConfiguration()
 	if (!accepted) {
 		return;
 	}
-	if (!XBotGoConfigService::instance()->createConfiguration(name.toStdString())) {
-		showError();
+	const auto error = XBotGoConfigService::instance()->createConfiguration(name.toStdString());
+	if (error) {
+		showError(error);
 		return;
 	}
 }
@@ -243,8 +246,9 @@ void ConfigDemoWindow::renameConfiguration()
 	if (!accepted) {
 		return;
 	}
-	if (!XBotGoConfigService::instance()->renameConfiguration(id, name.toStdString())) {
-		showError();
+	const auto error = XBotGoConfigService::instance()->renameConfiguration(id, name.toStdString());
+	if (error) {
+		showError(error);
 		return;
 	}
 	refreshConfigurationList();
@@ -256,16 +260,19 @@ void ConfigDemoWindow::switchConfiguration()
 	if (!item) {
 		return;
 	}
-	if (!XBotGoConfigService::instance()->switchConfiguration(item->data(Qt::UserRole).toString().toStdString())) {
-		showError();
+	const auto error = XBotGoConfigService::instance()->switchConfiguration(
+		item->data(Qt::UserRole).toString().toStdString());
+	if (error) {
+		showError(error);
 		return;
 	}
 }
 
 void ConfigDemoWindow::reloadConfiguration()
 {
-	if (!XBotGoConfigService::instance()->reloadCurrentConfiguration()) {
-		showError();
+	const auto error = XBotGoConfigService::instance()->reloadCurrentConfiguration();
+	if (error) {
+		showError(error);
 		return;
 	}
 }
@@ -350,10 +357,6 @@ void ConfigDemoWindow::refreshSaveStatus()
 	auto status = QStringLiteral("修改版本 %1  ·  已保存版本 %2")
 			      .arg(service->getMemoryRevision())
 			      .arg(service->getSavedRevision());
-	const auto error = service->lastError();
-	if (!error.empty()) {
-		status += QStringLiteral("  ·  %1").arg(QString::fromStdString(error));
-	}
 	saveStatusLabel_->setText(status);
 }
 
@@ -371,10 +374,10 @@ void ConfigDemoWindow::readMemorySnapshot()
 				     antiFlickerComboBox_->findData(static_cast<int>(data.antiFlicker)))));
 }
 
-void ConfigDemoWindow::showError()
+void ConfigDemoWindow::showError(const xbotgo::CfgError &error)
 {
 	QMessageBox::warning(this, QStringLiteral("配置管理"),
-			     QString::fromStdString(XBotGoConfigService::instance()->lastError()));
+				     QString::fromStdString(error.description));
 }
 
 void ConfigDemoWindow::openConfigurationDirectory()
