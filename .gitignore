@@ -1,0 +1,4 @@
+/build/
+/build_xcode/
+/cmake-build-*/
+.DS_Store
